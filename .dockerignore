@@ -1,0 +1,11 @@
+.git
+__pycache__/
+*.pyc
+.env
+sent_log.json
+chats.json
+*.mp3
+*.ogg
+*.opus
+.venv/
+venv/
