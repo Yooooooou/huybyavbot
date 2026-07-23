@@ -331,8 +331,12 @@ async def cmd_meme(message: Message) -> None:
 
 
 # --- Scheduling -----------------------------------------------------------
-def schedule_next(scheduler: AsyncIOScheduler, bot: Bot) -> None:
-    run_at = next_run_time()
+# If a scheduled attempt fails to produce a clip (e.g. a transient YouTube
+# block), retry soon instead of waiting a full interval.
+RETRY_MINUTES = int(os.getenv("RETRY_MINUTES", "10"))
+
+
+def _schedule(scheduler: AsyncIOScheduler, bot: Bot, run_at: datetime) -> None:
     scheduler.add_job(
         run_job,
         "date",
@@ -344,13 +348,32 @@ def schedule_next(scheduler: AsyncIOScheduler, bot: Bot) -> None:
     log.info("next broadcast scheduled for %s", run_at.strftime("%Y-%m-%d %H:%M"))
 
 
+def schedule_next(scheduler: AsyncIOScheduler, bot: Bot) -> None:
+    _schedule(scheduler, bot, next_run_time())
+
+
+def schedule_retry(scheduler: AsyncIOScheduler, bot: Bot) -> None:
+    _schedule(scheduler, bot, datetime.now() + timedelta(minutes=RETRY_MINUTES))
+
+
 async def run_job(scheduler: AsyncIOScheduler, bot: Bot) -> None:
+    chats = group_chats()
+    if not chats:
+        log.info("no group chats registered; will check again next interval")
+        schedule_next(scheduler, bot)
+        return
+
+    ok = False
     try:
-        await make_and_send(bot, group_chats())
+        ok = await make_and_send(bot, chats)
     except Exception:
         log.exception("unexpected error in job")
-    finally:
+
+    if ok:
         schedule_next(scheduler, bot)
+    else:
+        log.warning("scheduled post produced nothing; retrying in %d min", RETRY_MINUTES)
+        schedule_retry(scheduler, bot)
 
 
 async def main() -> None:
