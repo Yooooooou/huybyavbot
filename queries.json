@@ -1,0 +1,13 @@
+{
+  "_comment": "Ключевые слова, по которым бот сам ищет мемные ролики на YouTube (через yt-dlp, без API-ключа). Меняй/дополняй как хочешь — чем разнообразнее, тем меньше повторов.",
+  "queries": [
+    "мемные звуки",
+    "прикольные звуки нарезка",
+    "meme sound effects compilation",
+    "meme sounds no copyright",
+    "звуки для монтажа мемы",
+    "funny meme sounds",
+    "meme soundboard compilation",
+    "смешные звуки подборка"
+  ]
+}

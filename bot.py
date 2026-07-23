@@ -126,7 +126,11 @@ async def produce_and_send(bot: Bot) -> bool:
     failed_videos: set[str] = set()
 
     for attempt in range(1, MAX_ATTEMPTS + 1):
-        video_id = youtube_utils.pick_video_id(exclude=failed_videos)
+        try:
+            video_id = youtube_utils.find_video_id(exclude=failed_videos)
+        except youtube_utils.DownloadError as exc:
+            log.warning("could not find a video: %s", exc)
+            return False
         log.info("attempt %d/%d: video %s", attempt, MAX_ATTEMPTS, video_id)
 
         with tempfile.TemporaryDirectory(prefix="memebot_") as tmpdir:

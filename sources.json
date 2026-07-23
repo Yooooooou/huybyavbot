@@ -1,8 +1,4 @@
 {
-  "_comment": "Replace 'video_ids' with 20-50 YouTube video IDs of meme-sound compilations. The ID is the part after 'v=' in a YouTube URL (e.g. for https://www.youtube.com/watch?v=dQw4w9WgXcQ the id is 'dQw4w9WgXcQ'). The few entries below are placeholders/examples - curate your own list.",
-  "video_ids": [
-    "dQw4w9WgXcQ",
-    "9jK-NcRmVcw",
-    "ZZ5LpwO-An4"
-  ]
+  "_comment": "Необязательный запасной список video_id. Бот сам ищет видео по ключевым словам из queries.json (без API-ключа), а сюда можно ничего не класть. Список используется только если поиск ничего не вернул. Формат: \"video_ids\": [\"dQw4w9WgXcQ\", ...].",
+  "video_ids": []
 }

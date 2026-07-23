@@ -1,4 +1,10 @@
-"""YouTube side: load the source list and download an audio track with yt-dlp."""
+"""YouTube side: find meme videos by search (no API key) and download audio.
+
+Discovery is done with yt-dlp's built-in ``ytsearch`` — it scrapes YouTube
+search results directly, so no YOUTUBE_API_KEY / quota is needed. Keywords
+live in queries.json. An optional sources.json (curated video ids) is used as
+a fallback if search yields nothing.
+"""
 from __future__ import annotations
 
 import json
@@ -10,32 +16,105 @@ import yt_dlp
 
 log = logging.getLogger(__name__)
 
+QUERIES_FILE = Path(__file__).with_name("queries.json")
 SOURCES_FILE = Path(__file__).with_name("sources.json")
+
+# Skip results longer than this (seconds) to avoid huge downloads / livestreams.
+MAX_VIDEO_SECONDS = 20 * 60
+# How many results to pull per search.
+SEARCH_LIMIT = 25
 
 
 class DownloadError(RuntimeError):
     """Raised when yt-dlp fails to produce an audio file."""
 
 
-def load_video_ids(path: str | Path = SOURCES_FILE) -> list[str]:
-    """Read the curated list of YouTube video IDs from sources.json."""
-    with open(path, encoding="utf-8") as fh:
-        data = json.load(fh)
+# --- Discovery ------------------------------------------------------------
+def load_queries(path: str | Path = QUERIES_FILE) -> list[str]:
+    """Read the meme search keywords from queries.json."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return []
+    qs = data.get("queries", []) if isinstance(data, dict) else data
+    return [str(q).strip() for q in qs if str(q).strip()]
+
+
+def load_source_ids(path: str | Path = SOURCES_FILE) -> list[str]:
+    """Read the optional curated fallback list of video ids from sources.json."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return []
     ids = data.get("video_ids", []) if isinstance(data, dict) else data
-    ids = [str(v).strip() for v in ids if str(v).strip()]
-    if not ids:
-        raise DownloadError(f"no video ids found in {path}")
+    return [str(v).strip() for v in ids if str(v).strip()]
+
+
+def search_video_ids(query: str, limit: int = SEARCH_LIMIT) -> list[str]:
+    """Search YouTube for ``query`` via yt-dlp and return candidate video ids.
+
+    Uses a flat extraction (metadata only, no download). Filters out overly
+    long videos and livestreams when that info is available.
+    """
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "extract_flat": True,
+        "skip_download": True,
+        "noplaylist": True,
+    }
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(f"ytsearch{limit}:{query}", download=False)
+    except Exception as exc:
+        log.warning("search failed for %r: %s", query, exc)
+        return []
+
+    ids: list[str] = []
+    for entry in (info or {}).get("entries", []) or []:
+        if not entry:
+            continue
+        vid = entry.get("id")
+        if not vid:
+            continue
+        if entry.get("live_status") in {"is_live", "is_upcoming"}:
+            continue
+        dur = entry.get("duration")
+        if isinstance(dur, (int, float)) and dur > MAX_VIDEO_SECONDS:
+            continue
+        ids.append(vid)
     return ids
 
 
-def pick_video_id(exclude: set[str] | None = None) -> str:
-    """Return a random video id, avoiding those in ``exclude`` when possible."""
-    ids = load_video_ids()
+def find_video_id(exclude: set[str] | None = None) -> str:
+    """Find one meme video id: search a random keyword, fall back to sources.json.
+
+    Raises DownloadError if nothing usable is found.
+    """
     exclude = exclude or set()
-    candidates = [v for v in ids if v not in exclude] or ids
-    return random.choice(candidates)
+
+    queries = load_queries()
+    random.shuffle(queries)
+    for query in queries:
+        ids = search_video_ids(query)
+        random.shuffle(ids)
+        fresh = [v for v in ids if v not in exclude]
+        if fresh:
+            log.info("found %d candidates for %r, picking one", len(fresh), query)
+            return random.choice(fresh)
+
+    # Fallback: curated list, if present.
+    fallback = [v for v in load_source_ids() if v not in exclude]
+    if fallback:
+        log.info("search empty; using sources.json fallback")
+        return random.choice(fallback)
+
+    raise DownloadError("no video found via search or sources.json")
 
 
+# --- Download -------------------------------------------------------------
 def download_audio(video_id: str, dst_dir: str | Path) -> Path:
     """Download the audio track of ``video_id`` as an mp3 into ``dst_dir``.
 
