@@ -41,10 +41,12 @@ CHATS_FILE = Path(__file__).with_name("chats.json")
 # --- Config ---------------------------------------------------------------
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 
-MIN_INTERVAL_MINUTES = int(os.getenv("MIN_INTERVAL_MINUTES", "60"))
-MAX_INTERVAL_MINUTES = int(os.getenv("MAX_INTERVAL_MINUTES", "240"))
-QUIET_START_HOUR = int(os.getenv("QUIET_START_HOUR", "22"))
-QUIET_END_HOUR = int(os.getenv("QUIET_END_HOUR", "9"))
+# Roughly once an hour, but randomized.
+MIN_INTERVAL_MINUTES = int(os.getenv("MIN_INTERVAL_MINUTES", "45"))
+MAX_INTERVAL_MINUTES = int(os.getenv("MAX_INTERVAL_MINUTES", "75"))
+# Quiet hours off by default (equal start/end == disabled) -> posts 24/7.
+QUIET_START_HOUR = int(os.getenv("QUIET_START_HOUR", "0"))
+QUIET_END_HOUR = int(os.getenv("QUIET_END_HOUR", "0"))
 MIN_CLIP_SECONDS = float(os.getenv("MIN_CLIP_SECONDS", "5"))
 MAX_CLIP_SECONDS = float(os.getenv("MAX_CLIP_SECONDS", "15"))
 
@@ -61,6 +63,19 @@ PIPELINE_LOCK = asyncio.Lock()
 
 
 # --- Chat registry --------------------------------------------------------
+GROUP_CHAT_TYPES = {"group", "supergroup"}
+
+
+def is_group_chat(chat_type: str) -> bool:
+    """The bot only operates in groups; private chats and channels are ignored."""
+    return chat_type in GROUP_CHAT_TYPES
+
+
+def group_chats() -> list[int]:
+    """Registered chats that are groups (negative ids); never private DMs."""
+    return [c for c in load_chats() if c < 0]
+
+
 def load_chats() -> list[int]:
     if not CHATS_FILE.exists():
         return []
@@ -272,7 +287,12 @@ async def make_and_send(bot: Bot, chat_ids: list[int]) -> bool:
 # --- Handlers -------------------------------------------------------------
 @dp.my_chat_member()
 async def on_membership_change(update: ChatMemberUpdated) -> None:
-    """Register/unregister a chat when the bot is added to or removed from it."""
+    """Register/unregister a chat when the bot is added to or removed from it.
+
+    Only groups are tracked; private chats and channels are ignored.
+    """
+    if not is_group_chat(update.chat.type):
+        return
     status = update.new_chat_member.status
     if status in {"member", "administrator", "creator"}:
         add_chat(update.chat.id)
@@ -282,15 +302,21 @@ async def on_membership_change(update: ChatMemberUpdated) -> None:
 
 @dp.message(Command("start"))
 async def cmd_start(message: Message) -> None:
+    if not is_group_chat(message.chat.type):
+        await message.answer("Я работаю только в группах. Добавь меня в группу 🙂")
+        return
     add_chat(message.chat.id)
     await message.answer(
-        "Привет! Я буду присылать мемные голосовые в этот чат по расписанию.\n"
+        "Привет! Я буду присылать мемные голосовые в эту группу по расписанию.\n"
         "Команда /meme — прислать мем прямо сейчас (проверить, что всё работает)."
     )
 
 
 @dp.message(Command("meme"))
 async def cmd_meme(message: Message) -> None:
+    if not is_group_chat(message.chat.type):
+        await message.answer("Я работаю только в группах. Добавь меня в группу 🙂")
+        return
     add_chat(message.chat.id)
     note = await message.answer("Секу мемчик... 🎧")
     ok = await make_and_send(message.bot, [message.chat.id])
@@ -320,7 +346,7 @@ def schedule_next(scheduler: AsyncIOScheduler, bot: Bot) -> None:
 
 async def run_job(scheduler: AsyncIOScheduler, bot: Bot) -> None:
     try:
-        await make_and_send(bot, load_chats())
+        await make_and_send(bot, group_chats())
     except Exception:
         log.exception("unexpected error in job")
     finally:
