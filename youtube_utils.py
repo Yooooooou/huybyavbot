@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import random
 from pathlib import Path
 
@@ -23,6 +24,29 @@ SOURCES_FILE = Path(__file__).with_name("sources.json")
 MAX_VIDEO_SECONDS = 20 * 60
 # How many results to pull per search.
 SEARCH_LIMIT = 25
+
+# YouTube blocks datacenter IPs with a "confirm you're not a bot" check.
+# Spoofing the player client sometimes gets around it without cookies; a
+# cookies file is the reliable fallback. Both are configurable via env.
+PLAYER_CLIENTS = [
+    c.strip()
+    for c in os.getenv("YTDLP_PLAYER_CLIENT", "tv,mweb,web_safari,android_vr").split(",")
+    if c.strip()
+]
+COOKIES_FILE = os.getenv("COOKIES_FILE", "").strip()
+
+
+def _base_ydl_opts() -> dict:
+    """Common yt-dlp options, incl. anti-bot-check tweaks and optional cookies."""
+    opts: dict = {
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+        "extractor_args": {"youtube": {"player_client": PLAYER_CLIENTS}},
+    }
+    if COOKIES_FILE and os.path.exists(COOKIES_FILE):
+        opts["cookiefile"] = COOKIES_FILE
+    return opts
 
 
 class DownloadError(RuntimeError):
@@ -58,13 +82,8 @@ def search_video_ids(query: str, limit: int = SEARCH_LIMIT) -> list[str]:
     Uses a flat extraction (metadata only, no download). Filters out overly
     long videos and livestreams when that info is available.
     """
-    opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "extract_flat": True,
-        "skip_download": True,
-        "noplaylist": True,
-    }
+    opts = _base_ydl_opts()
+    opts.update({"extract_flat": True, "skip_download": True})
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(f"ytsearch{limit}:{query}", download=False)
@@ -124,20 +143,20 @@ def download_audio(video_id: str, dst_dir: str | Path) -> Path:
     dst_dir.mkdir(parents=True, exist_ok=True)
     out_template = str(dst_dir / f"{video_id}.%(ext)s")
 
-    ydl_opts = {
-        "format": "bestaudio/best",
-        "outtmpl": out_template,
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": True,
-        "postprocessors": [
-            {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "128",
-            }
-        ],
-    }
+    ydl_opts = _base_ydl_opts()
+    ydl_opts.update(
+        {
+            "format": "bestaudio/best",
+            "outtmpl": out_template,
+            "postprocessors": [
+                {
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": "128",
+                }
+            ],
+        }
+    )
 
     url = f"https://www.youtube.com/watch?v={video_id}"
     try:
