@@ -1,0 +1,8 @@
+{
+  "_comment": "Replace 'video_ids' with 20-50 YouTube video IDs of meme-sound compilations. The ID is the part after 'v=' in a YouTube URL (e.g. for https://www.youtube.com/watch?v=dQw4w9WgXcQ the id is 'dQw4w9WgXcQ'). The few entries below are placeholders/examples - curate your own list.",
+  "video_ids": [
+    "dQw4w9WgXcQ",
+    "9jK-NcRmVcw",
+    "ZZ5LpwO-An4"
+  ]
+}

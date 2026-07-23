@@ -1,0 +1,6 @@
+# Railway / Nixpacks: make sure ffmpeg (and ffprobe) are available at runtime.
+[phases.setup]
+nixPkgs = ["python311", "ffmpeg"]
+
+[start]
+cmd = "python bot.py"

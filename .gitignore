@@ -1,0 +1,10 @@
+.env
+sent_log.json
+__pycache__/
+*.pyc
+*.mp3
+*.ogg
+*.opus
+*.tmp
+.venv/
+venv/
