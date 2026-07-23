@@ -41,8 +41,8 @@ CHATS_FILE = Path(__file__).with_name("chats.json")
 # --- Config ---------------------------------------------------------------
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 
-# Roughly once an hour, but randomized.
-MIN_INTERVAL_MINUTES = int(os.getenv("MIN_INTERVAL_MINUTES", "45"))
+# Randomized interval between posts, 5-75 min by default.
+MIN_INTERVAL_MINUTES = int(os.getenv("MIN_INTERVAL_MINUTES", "5"))
 MAX_INTERVAL_MINUTES = int(os.getenv("MAX_INTERVAL_MINUTES", "75"))
 # Quiet hours off by default (equal start/end == disabled) -> posts 24/7.
 QUIET_START_HOUR = int(os.getenv("QUIET_START_HOUR", "0"))
