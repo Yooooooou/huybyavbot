@@ -65,6 +65,8 @@ MAX_ATTEMPTS = 8
 dp = Dispatcher()
 # Serialize the heavy pipeline so a /meme and a scheduled run don't overlap.
 PIPELINE_LOCK = asyncio.Lock()
+# Set in main(); used by /status to report the next scheduled run.
+_scheduler: AsyncIOScheduler | None = None
 
 
 # --- Chat registry --------------------------------------------------------
@@ -335,6 +337,29 @@ async def cmd_meme(message: Message) -> None:
         pass
 
 
+@dp.message(Command("status"))
+async def cmd_status(message: Message) -> None:
+    if not is_group_chat(message.chat.type):
+        await message.answer("Я работаю только в группах 🙂")
+        return
+    add_chat(message.chat.id)
+    groups = group_chats()
+    here = message.chat.id in groups
+    job = _scheduler.get_job("meme_job") if _scheduler else None
+    nxt = job.next_run_time if job else None
+    if nxt is not None:
+        mins = max(0, int((nxt.timestamp() - datetime.now().timestamp()) // 60))
+        when = f"{nxt.strftime('%H:%M')} (через ~{mins} мин)"
+    else:
+        when = "не запланирован"
+    await message.answer(
+        f"Групп в списке: {len(groups)}\n"
+        f"Эта группа зарегистрирована: {'да ✅' if here else 'нет ❌'}\n"
+        f"Следующий авто-мем: {when}\n"
+        f"Интервал: {MIN_INTERVAL_MINUTES}–{MAX_INTERVAL_MINUTES} мин"
+    )
+
+
 @dp.message()
 async def on_any_group_message(message: Message) -> None:
     """Re-register a group on any activity so the registry self-heals.
@@ -398,8 +423,10 @@ async def main() -> None:
     if not BOT_TOKEN:
         raise SystemExit("BOT_TOKEN must be set (see .env.example)")
 
+    global _scheduler
     bot = Bot(token=BOT_TOKEN)
     scheduler = AsyncIOScheduler()
+    _scheduler = scheduler
     scheduler.start()
     schedule_next(scheduler, bot)
     log.info(
