@@ -35,8 +35,13 @@ log = logging.getLogger("memebot")
 
 load_dotenv()
 
-SENT_LOG_FILE = Path(__file__).with_name("sent_log.json")
-CHATS_FILE = Path(__file__).with_name("chats.json")
+# State lives in DATA_DIR. Point this at a Railway volume (e.g. /data) to keep
+# the chat registry across redeploys; otherwise it defaults to the app folder,
+# whose contents are wiped on every deploy/restart.
+DATA_DIR = Path(os.getenv("DATA_DIR", str(Path(__file__).parent)))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+SENT_LOG_FILE = DATA_DIR / "sent_log.json"
+CHATS_FILE = DATA_DIR / "chats.json"
 
 # --- Config ---------------------------------------------------------------
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
@@ -330,6 +335,19 @@ async def cmd_meme(message: Message) -> None:
         pass
 
 
+@dp.message()
+async def on_any_group_message(message: Message) -> None:
+    """Re-register a group on any activity so the registry self-heals.
+
+    Railway's filesystem is ephemeral, so chats.json is wiped on redeploy. As
+    an admin the bot receives all group messages, so the first message after a
+    restart puts the group back in the registry without anyone running /meme.
+    Command messages are handled above; this only catches the rest.
+    """
+    if is_group_chat(message.chat.type):
+        add_chat(message.chat.id)
+
+
 # --- Scheduling -----------------------------------------------------------
 # If a scheduled attempt fails to produce a clip (e.g. a transient YouTube
 # block), retry soon instead of waiting a full interval.
@@ -384,7 +402,11 @@ async def main() -> None:
     scheduler = AsyncIOScheduler()
     scheduler.start()
     schedule_next(scheduler, bot)
-    log.info("memebot running; add me to a chat and/or send /meme")
+    log.info(
+        "memebot running; %d group(s) known, DATA_DIR=%s",
+        len(group_chats()),
+        DATA_DIR,
+    )
 
     await dp.start_polling(bot)
 
