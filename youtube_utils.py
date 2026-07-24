@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import random
+import tempfile
 from pathlib import Path
 
 import yt_dlp
@@ -34,6 +35,19 @@ PLAYER_CLIENTS = [
     if c.strip()
 ]
 COOKIES_FILE = os.getenv("COOKIES_FILE", "").strip()
+
+# Easiest cookies path for Railway: paste the whole cookies.txt (Netscape
+# format) into the YOUTUBE_COOKIES env var. We write it to a temp file at
+# startup and hand that to yt-dlp. An explicit COOKIES_FILE path wins if set.
+_COOKIES_ENV = os.getenv("YOUTUBE_COOKIES", "")
+if not COOKIES_FILE and _COOKIES_ENV.strip():
+    _cookie_path = Path(tempfile.gettempdir()) / "yt_cookies.txt"
+    try:
+        _cookie_path.write_text(_COOKIES_ENV)
+        COOKIES_FILE = str(_cookie_path)
+        log.info("using YouTube cookies from YOUTUBE_COOKIES env")
+    except OSError as exc:
+        log.warning("could not write cookies from env: %s", exc)
 
 
 def _base_ydl_opts() -> dict:
